@@ -26,6 +26,9 @@ import {
   fillUsernameForHost,
   isHttpsAuthorizeUrl,
 } from '../lib/oauth-protocol.js'
+import { buildHelperGitconfigContent, helperLineCount } from '../lib/helper-gitconfig.js'
+import { runSilentOAuthGet } from '../lib/oauth-spawn.js'
+import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -40,14 +43,26 @@ import {
 } from './git-credential-dsh-git-forge.mjs'
 
 let failed = 0
+const queue = []
 function test(name, fn) {
-  try {
-    fn()
-    console.log('ok  ', name)
-  } catch (e) {
-    failed++
-    console.error('FAIL', name, e && e.message ? e.message : e)
+  queue.push({ name, fn })
+}
+
+async function runAll() {
+  for (const { name, fn } of queue) {
+    try {
+      await fn()
+      console.log('ok  ', name)
+    } catch (e) {
+      failed++
+      console.error('FAIL', name, e && e.message ? e.message : e)
+    }
   }
+  if (failed) {
+    console.error(`\n${failed} failed`)
+    process.exit(1)
+  }
+  console.log('\nall passed')
 }
 
 test('normalizeProjectKey', () => {
@@ -345,6 +360,66 @@ test('oauth protocol stdin/stdout and username defaults', () => {
   assert.equal(isHttpsAuthorizeUrl('file:///etc/passwd'), false)
 })
 
+test('helper gitconfig is a single forge helper', () => {
+  const content = buildHelperGitconfigContent('/usr/bin/node', '/opt/helper.mjs')
+  assert.equal(helperLineCount(content), 1)
+  assert.match(content, /helper = !"\/usr\/bin\/node" "\/opt\/helper.mjs"/)
+  assert.doesNotMatch(content, /helper = oauth/)
+})
+
+function fakeStd() {
+  const s = new EventEmitter()
+  s.setEncoding = () => s
+  return s
+}
+
+test('silent oauth watchdog kills hung child', async () => {
+  const hung = new EventEmitter()
+  hung.stdout = fakeStd()
+  hung.stderr = fakeStd()
+  hung.stdin = { write() {}, end() {} }
+  let killed = false
+  hung.kill = () => {
+    killed = true
+    hung.emit('close', null)
+  }
+  const r = await runSilentOAuthGet({
+    host: 'github.com',
+    refreshToken: 'bad',
+    timeoutMs: 50,
+    bin: '/bin/true',
+    spawnFn: () => hung,
+  })
+  assert.equal(r.timedOut, true)
+  assert.equal(r.ok, false)
+  assert.equal(killed, true)
+})
+
+test('silent oauth parses fill from fake child', async () => {
+  const child = new EventEmitter()
+  child.stdout = fakeStd()
+  child.stderr = fakeStd()
+  child.stdin = {
+    write() {},
+    end() {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'username=oauth2\npassword=tok\noauth_refresh_token=rt\n')
+        child.emit('close', 0)
+      })
+    },
+  }
+  const r = await runSilentOAuthGet({
+    host: 'github.com',
+    refreshToken: 'good',
+    timeoutMs: 1000,
+    bin: '/bin/true',
+    spawnFn: () => child,
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.parsed.password, 'tok')
+  assert.equal(r.parsed.oauthRefreshToken, 'rt')
+})
+
 test('xdg-open stub writes pending https URL and rejects loopback', () => {
   const dir = mkdtempSync(join(tmpdir(), 'gf-oauth-'))
   const pending = join(dir, 'pending.json')
@@ -365,8 +440,4 @@ test('xdg-open stub writes pending https URL and rejects loopback', () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-if (failed) {
-  console.error(`\n${failed} failed`)
-  process.exit(1)
-}
-console.log('\nall passed')
+await runAll()
