@@ -18,7 +18,8 @@ import {
   classifyGitWriteCommand,
   evaluatePushPolicy,
 } from '../lib/shared/git-policy.js'
-import { selectTokenAccountForHost } from '../lib/shared/credential-select.js'
+import { selectTokenAccountForHost, selectHttpsAccountForHost } from '../lib/shared/credential-select.js'
+import { oauthProviderHostError, oauthSupportedProvider } from '../lib/shared/oauth-match.js'
 import { guessPushRemoteName } from '../lib/shared/remote-resolve.js'
 import {
   parseCredentialInput,
@@ -224,6 +225,93 @@ test('guessPushRemoteName', () => {
   assert.equal(guessPushRemoteName('git push'), 'origin')
   assert.equal(guessPushRemoteName('git push origin main'), 'origin')
   assert.equal(guessPushRemoteName('git push --force-with-lease upstream HEAD'), 'upstream')
+})
+
+test('oauthProviderHostError rejects gitee and mismatched github host', () => {
+  assert.match(oauthProviderHostError('gitee', 'gitee.com'), /gitee does not support/)
+  assert.match(oauthProviderHostError('github', 'gitea.example.com'), /does not look like GitHub/)
+  assert.equal(oauthProviderHostError('github', 'github.com'), '')
+  assert.equal(oauthProviderHostError('gitea', 'gitea.example.com'), '')
+  assert.equal(oauthSupportedProvider('github'), true)
+  assert.equal(oauthSupportedProvider('gitee'), false)
+})
+
+test('HTTPS PAT wins over oauth on same host', () => {
+  const r = selectHttpsAccountForHost({
+    projectPathKey: '/workspace/app',
+    host: 'github.com',
+    grants: { accountIds: ['t1', 'o1'] },
+    accounts: [
+      { id: 't1', gitHost: 'github.com', authMethod: 'token' },
+      { id: 'o1', gitHost: 'github.com', authMethod: 'oauth' },
+    ],
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.via, 'token')
+  assert.equal(r.account.id, 't1')
+})
+
+test('HTTPS selects unique oauth when no PAT', () => {
+  const r = selectHttpsAccountForHost({
+    projectPathKey: '/workspace/app',
+    host: 'github.com',
+    grants: { accountIds: ['o1'] },
+    accounts: [{ id: 'o1', gitHost: 'github.com', authMethod: 'oauth' }],
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.via, 'oauth')
+  assert.equal(r.account.id, 'o1')
+})
+
+test('HTTPS rejects two oauth accounts', () => {
+  const r = selectHttpsAccountForHost({
+    projectPathKey: '/workspace/app',
+    host: 'github.com',
+    grants: { accountIds: ['o1', 'o2'] },
+    accounts: [
+      { id: 'o1', gitHost: 'github.com', authMethod: 'oauth' },
+      { id: 'o2', gitHost: 'github.com', authMethod: 'oauth' },
+    ],
+  })
+  assert.equal(r.ok, false)
+  assert.equal(r.code, 'ambiguous_oauth')
+})
+
+test('R1 ssh_only still when only SSH; oauth-only is not ssh_only', () => {
+  const ssh = selectTokenAccountForHost({
+    projectPathKey: '/workspace/app',
+    host: 'github.com',
+    grants: { accountIds: ['s1'] },
+    accounts: [{ id: 's1', gitHost: 'github.com', authMethod: 'ssh' }],
+  })
+  assert.equal(ssh.ok, false)
+  assert.equal(ssh.code, 'ssh_only')
+  const tokenOnlyOauth = selectTokenAccountForHost({
+    projectPathKey: '/workspace/app',
+    host: 'github.com',
+    grants: { accountIds: ['o1'] },
+    accounts: [{ id: 'o1', gitHost: 'github.com', authMethod: 'oauth' }],
+  })
+  assert.equal(tokenOnlyOauth.ok, false)
+  assert.equal(tokenOnlyOauth.code, 'no_token_account')
+})
+
+test('publicAccount oauth status from refresh; no secret fields', () => {
+  const account = {
+    id: 'o1',
+    name: 'gh-oauth',
+    provider: 'github',
+    gitHost: 'github.com',
+    authMethod: 'oauth',
+  }
+  const secrets = { byAccountId: { o1: { oauthRefreshToken: 'rt_secret' } } }
+  const pub = publicAccount(account, secrets)
+  assert.equal(pub.credentialStatus, 'saved')
+  assert.equal(pub.tokenConfigured, false)
+  assert.equal('oauthRefreshToken' in pub, false)
+  assertNoSecretFields(pub)
+  const expired = publicAccount(account, { byAccountId: { o1: { oauthExpired: true } } })
+  assert.equal(expired.credentialStatus, 'expired')
 })
 
 if (failed) {
