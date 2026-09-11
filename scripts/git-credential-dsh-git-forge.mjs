@@ -13,12 +13,14 @@
  *
  * Never log password/token. Optional DSH_GIT_FORGE_HELPER_DEBUG=1 enables non-secret stderr.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as pathResolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { normalizeProjectKey, resolveGrantsProjectKey } from '../lib/shared/path.js'
-import { selectTokenAccountForHost } from '../lib/shared/credential-select.js'
+import { selectHttpsAccountForHost } from '../lib/shared/credential-select.js'
+import { fillUsernameForHost } from '../lib/oauth-protocol.js'
+import { runSilentOAuthGet } from '../lib/oauth-spawn.js'
 
 function dataDir() {
   const home = process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -95,7 +97,7 @@ async function runGet() {
     accountIds: [],
   }
 
-  const selected = selectTokenAccountForHost({
+  const selected = selectHttpsAccountForHost({
     projectPathKey,
     host,
     grants,
@@ -105,10 +107,44 @@ async function runGet() {
     debug(`${selected.code}: ${selected.message}`)
     return
   }
-  const token =
-    secretsDoc.byAccountId && secretsDoc.byAccountId[selected.account.id]
-      ? secretsDoc.byAccountId[selected.account.id].token
-      : ''
+  const sec =
+    (secretsDoc.byAccountId && secretsDoc.byAccountId[selected.account.id]) || {}
+  if (selected.via === 'oauth' || selected.account.authMethod === 'oauth') {
+    const refresh = sec.oauthRefreshToken || ''
+    if (!refresh) {
+      debug('oauth refresh missing; re-authorize in Git Forge sidebar')
+      return
+    }
+    const silent = await runSilentOAuthGet({
+      host,
+      username: fillUsernameForHost(host, selected.account.username),
+      refreshToken: refresh,
+    })
+    if (!silent.ok || !silent.parsed.password) {
+      debug('oauth refresh failed; re-authorize in Git Forge sidebar')
+      return
+    }
+    if (silent.parsed.oauthRefreshToken && silent.parsed.oauthRefreshToken !== refresh) {
+      try {
+        const next = { ...secretsDoc, byAccountId: { ...secretsDoc.byAccountId } }
+        next.byAccountId[selected.account.id] = {
+          ...sec,
+          oauthRefreshToken: silent.parsed.oauthRefreshToken,
+          oauthExpired: undefined,
+        }
+        if (silent.parsed.passwordExpiryUtc) {
+          next.byAccountId[selected.account.id].oauthTokenExpiry = Number(silent.parsed.passwordExpiryUtc)
+        }
+        writeFileSync(join(dir, 'secrets.json'), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
+      } catch {
+        /* ignore persist errors; still fill git */
+      }
+    }
+    const username = fillUsernameForHost(host, selected.account.username || silent.parsed.username)
+    process.stdout.write(`username=${username}\npassword=${silent.parsed.password}\n\n`)
+    return
+  }
+  const token = sec.token || ''
   if (!token) {
     debug('token missing in secrets store')
     return

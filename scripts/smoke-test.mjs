@@ -29,7 +29,7 @@ import {
 import { buildHelperGitconfigContent, helperLineCount } from '../lib/helper-gitconfig.js'
 import { runSilentOAuthGet } from '../lib/oauth-spawn.js'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -418,6 +418,48 @@ test('silent oauth parses fill from fake child', async () => {
   assert.equal(r.ok, true)
   assert.equal(r.parsed.password, 'tok')
   assert.equal(r.parsed.oauthRefreshToken, 'rt')
+})
+
+test('credential helper silent oauth fill via fake binary', () => {
+  const home = mkdtempSync(join(tmpdir(), 'gf-home-'))
+  const gf = join(home, 'git-forge')
+  mkdirSync(gf)
+  writeFileSync(
+    join(gf, 'accounts.json'),
+    JSON.stringify({
+      version: 1,
+      accounts: [{ id: 'o1', gitHost: 'github.com', authMethod: 'oauth', username: '' }],
+    }) + '\n',
+  )
+  writeFileSync(
+    join(gf, 'grants.json'),
+    JSON.stringify({ version: 1, projects: { '/workspace/app': { accountIds: ['o1'] } } }) + '\n',
+  )
+  writeFileSync(
+    join(gf, 'secrets.json'),
+    JSON.stringify({ version: 1, byAccountId: { o1: { oauthRefreshToken: 'good' } } }) + '\n',
+  )
+  chmodSync(join(gf, 'secrets.json'), 0o600)
+  const helper = join(ROOT, 'scripts/git-credential-dsh-git-forge.mjs')
+  const fake = join(ROOT, 'scripts/fixtures/fake-oauth-get.mjs')
+  const r = spawnSync(process.execPath, [helper, 'get'], {
+    cwd: gf,
+    env: {
+      ...process.env,
+      DSH_HOME: home,
+      DSH_GIT_FORGE_PROJECT: '/workspace/app',
+      DSH_GIT_FORGE_OAUTH_BIN: fake,
+    },
+    input: 'protocol=https\nhost=github.com\n\n',
+    encoding: 'utf8',
+  })
+  try {
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /username=oauth2/)
+    assert.match(r.stdout, /password=access_ok/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 })
 
 test('xdg-open stub writes pending https URL and rejects loopback', () => {
