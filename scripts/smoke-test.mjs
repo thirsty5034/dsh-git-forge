@@ -360,11 +360,39 @@ test('oauth protocol stdin/stdout and username defaults', () => {
   assert.equal(isHttpsAuthorizeUrl('file:///etc/passwd'), false)
 })
 
-test('helper gitconfig is a single forge helper', () => {
+test('helper gitconfig is a single forge helper after empty reset', () => {
   const content = buildHelperGitconfigContent('/usr/bin/node', '/opt/helper.mjs')
   assert.equal(helperLineCount(content), 1)
-  assert.match(content, /helper = !"\/usr\/bin\/node" "\/opt\/helper.mjs"/)
+  const helperLines = content.split('\n').filter((l) => /^\thelper\s*=/.test(l))
+  assert.equal(helperLines[0], '\thelper =')
+  assert.equal(helperLines[1], `\thelper = !\\"/usr/bin/node\\" \\"/opt/helper.mjs\\"`)
   assert.doesNotMatch(content, /helper = oauth/)
+})
+
+test('helper gitconfig quoting survives gitconfig parse for paths with spaces', () => {
+  const nodeExec = String.raw`C:\Program Files\nodejs\node.exe`
+  const helperJs = String.raw`C:\Users\foo\.dsh\profiles\web\node_modules\dsh-git-forge\scripts\git-credential-dsh-git-forge.mjs`
+  const content = buildHelperGitconfigContent(nodeExec, helperJs)
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-git-forge-cfg-'))
+  const cfg = join(dir, 'gitconfig')
+  try {
+    writeFileSync(cfg, content)
+    const listed = spawnSync(
+      'git',
+      ['config', '--file', cfg, '--get-all', 'credential.helper'],
+      { encoding: 'utf8' },
+    )
+    assert.equal(listed.status, 0, listed.stderr)
+    const values = String(listed.stdout || '').split('\n')
+    if (values[values.length - 1] === '') values.pop()
+    assert.equal(values[0], '')
+    assert.equal(
+      values[1],
+      '!"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\foo\\.dsh\\profiles\\web\\node_modules\\dsh-git-forge\\scripts\\git-credential-dsh-git-forge.mjs"',
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 function fakeStd() {

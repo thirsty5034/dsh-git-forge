@@ -2,11 +2,18 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
-## 0.1.6 — 2026-09-11
+## 0.1.7 — 2026-09-11
 
 ### Added
 - **`authMethod=oauth`** via PATH `git-credential-oauth` (hickford). Authorize at account save time in a **system browser** (sidebar shows the https URL; not an iframe). Per-account refresh is stored in `secrets.json`; agent git **silently refreshes** and never opens a browser.
 - PAT still wins when a token account is also granted for the same host (R1). Do **not** run `git-credential-oauth configure`. Install the binary on PATH (this compose: `~/.local/bin`, see OPERATIONS.md §6.7).
+- Includes the 0.1.6 Windows helper-selector hang / `!<cmd>` quoting fix (empty `helper =` reset in generated gitconfig).
+
+## 0.1.6 — 2026-09-11
+
+### Fixed
+- **Agent HTTPS git no longer hangs on Git for Windows.** Git for Windows registers a GUI `credential.helper = helper-selector` at system scope. Helpers accumulate across scopes, so the selector ran **before** this plugin’s helper and blocked forever on a dialog a headless agent shell can never answer. Generated gitconfig now writes an empty `helper =` first (clears the list; `gitcredentials(7)`).
+- **The `!<cmd>` helper now actually runs on paths with spaces.** gitconfig file quoting was swallowing the quotes around `C:\Program Files\nodejs\node.exe`, so the shell split the path (`line 1: C:Program: command not found`). Inner quotes are now escaped as `\"`. Confined to `$DSH_HOME/git-forge/gitconfig`; do not inject `GIT_CONFIG_COUNT` / `KEY_n` / `VALUE_n`.
 
 ## 0.1.5 — 2026-09-08
 

@@ -2,11 +2,18 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
-## 0.1.6 — 2026-09-11
+## 0.1.7 — 2026-09-11
 
 ### 新增
 - **`authMethod=oauth`**：使用 PATH 上的 `git-credential-oauth`（hickford）。在**保存账号时**用系统浏览器完成授权（侧栏展示 https URL，不用 iframe）。refresh 按账号写入 `secrets.json`；agent git **静默续期**，不再开浏览器。
 - 同 host 若同时授权了 PAT 账号，仍走 PAT（R1）。不要运行 `git-credential-oauth configure`。二进制请装到 PATH（本 compose：`~/.local/bin`，见 OPERATIONS.md §6.7）。
+- 包含 0.1.6 的 Windows `helper-selector` 挂起 / `!<cmd>` 引号修复（生成 gitconfig 里先写空的 `helper =`）。
+
+## 0.1.6 — 2026-09-11
+
+### 修复
+- **Git for Windows 下 agent 的 HTTPS git 不再永久卡死。** Git for Windows 在系统级 gitconfig 注册了 GUI `credential.helper = helper-selector`，helper 跨作用域叠加，于是它排在本插件 helper **前面**，无头 agent shell 里弹窗无人可答、永久阻塞。生成的 gitconfig 现在先写空的 `helper =`（清空此前累积，见 `gitcredentials(7)`）。
+- **含空格路径上 `!<cmd>` helper 现在真正会执行。** gitconfig 文件引号会吞掉 `C:\Program Files\nodejs\node.exe` 两侧的引号，shell 在空格处切开（`line 1: C:Program: command not found`）。内层引号改为 `\"`。仅限 `$DSH_HOME/git-forge/gitconfig`；不要注入 `GIT_CONFIG_COUNT` / `KEY_n` / `VALUE_n`。
 
 ## 0.1.5 — 2026-09-08
 
