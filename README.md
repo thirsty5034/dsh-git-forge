@@ -9,7 +9,7 @@ DeepSeek Harness community plugin: **forge accounts + per-project grants + push 
 - **Push guard**: blocks bash `git push` / `git remote add|set-url` to non-granted hosts  
 - Tokens in `$DSH_HOME/git-forge/secrets.json` (`0600`) — **never in model context**  
 - Model tool **`GitForge`** (read-only policy)  
-- **Agent HTTPS git:** after sidebar grants, agent bash `git fetch`/`push` can use the matching account via a Host-only credential helper (**tokens never enter the model**; R1 = exactly one granted token account per host)  
+- **Agent HTTPS git:** after sidebar grants, agent bash `git fetch`/`push` can use the matching account via a Host-only credential helper (**tokens never enter the model**; R1 = exactly one granted token account per host). Optional **`authMethod=oauth`**: authorize once in a system browser at account save; later agent git uses a stored refresh (never opens a browser). PAT wins if both are granted.  
 - UI aligned with [dsh-ssh-tunnel](https://github.com/thirsty5034/dsh-ssh-tunnel)
 
 SSH remotes and system `gh auth` still use local SSH/`gh`. HTTPS under **DSH agent shells** is filled by this plugin’s helper from project grants; the push guard still decides *where a project may push*.
@@ -95,7 +95,8 @@ GitForge action=check_remote url=git@github.com:org/repo.git
 
 - Grant key = **DSH session workspace** (`DSH_GIT_FORGE_PROJECT` in agent shells), not nested package path  
 - Helper resolution: `env` → exact cwd → walk parents under `/workspace`  
-- R1: auto-fill only with exactly **one** granted **token** account for that host  
+- R1: auto-fill only with exactly **one** granted **token** account for that host (PAT wins over oauth)
+- oauth accounts: install [git-credential-oauth](https://github.com/hickford/git-credential-oauth) on PATH; do **not** run `configure`; loopback authorize must reach the DSH host  
 - Push guard checks inline URLs **and** bare `git push` / `git push origin` (resolves remote URL)
 
 ## Security

@@ -2,6 +2,12 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
+## 0.1.6 — 2026-09-11
+
+### Added
+- **`authMethod=oauth`** via PATH `git-credential-oauth` (hickford). Authorize at account save time in a **system browser** (sidebar shows the https URL; not an iframe). Per-account refresh is stored in `secrets.json`; agent git **silently refreshes** and never opens a browser.
+- PAT still wins when a token account is also granted for the same host (R1). Do **not** run `git-credential-oauth configure`. Install the binary on PATH (this compose: `~/.local/bin`, see OPERATIONS.md §6.7).
+
 ## 0.1.5 — 2026-09-08
 
 ### Fixed

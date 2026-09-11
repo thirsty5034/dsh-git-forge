@@ -2,6 +2,12 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
+## 0.1.6 — 2026-09-11
+
+### 新增
+- **`authMethod=oauth`**：使用 PATH 上的 `git-credential-oauth`（hickford）。在**保存账号时**用系统浏览器完成授权（侧栏展示 https URL，不用 iframe）。refresh 按账号写入 `secrets.json`；agent git **静默续期**，不再开浏览器。
+- 同 host 若同时授权了 PAT 账号，仍走 PAT（R1）。不要运行 `git-credential-oauth configure`。二进制请装到 PATH（本 compose：`~/.local/bin`，见 OPERATIONS.md §6.7）。
+
 ## 0.1.5 — 2026-09-08
 
 ### 修复

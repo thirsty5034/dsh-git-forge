@@ -9,7 +9,7 @@ DeepSeek Harness **社区插件**：在 [dsh-better-sidebar](https://github.com/
 - **push 拦截**：已授权项目下，bash 的 `git push` / `git remote add|set-url` 指向未授权 host 会被拒绝  
 - Token 存 `$DSH_HOME/git-forge/secrets.json`（`0600`），**不进模型上下文**  
 - 模型工具 **`GitForge`**（只读策略）  
-- **Agent HTTPS git**：侧栏授权后，agent bash 中的 `git fetch`/`push` 等可通过 Host credential helper 使用对应账号（**token 永不进模型**；同 host 多 token 账号时需只保留一个授权 = R1）  
+- **Agent HTTPS git**：侧栏授权后，agent bash 中的 `git fetch`/`push` 等可通过 Host credential helper 使用对应账号（**token 永不进模型**；同 host 多 token 账号时需只保留一个授权 = R1）。可选 **`authMethod=oauth`**：保存账号时在系统浏览器授权一次；之后 agent 用已存 refresh 静默续期（不再开浏览器）。同 host 有 PAT 时仍用 PAT。  
 - UI 对齐 [dsh-ssh-tunnel](https://github.com/thirsty5034/dsh-ssh-tunnel)
 
 > SSH 远程与系统 `gh auth` 仍走本机 SSH/`gh`。HTTPS 在 **DSH agent shell** 下由本插件 helper 按项目授权注入；插件同时负责「这个项目允许推到哪」（push guard）。
@@ -92,7 +92,8 @@ GitForge action=check_remote url=git@github.com:org/repo.git
 
 - 授权 key = **DSH 会话工作区**（shell 注入 `DSH_GIT_FORGE_PROJECT`），不是子仓路径  
 - helper：`env` → cwd 精确匹配 → `/workspace` 下向父目录 walk  
-- R1：同 host 仅当恰好 **1** 个已授权 **token** 账号时自动注入  
+- R1：同 host 仅当恰好 **1** 个已授权 **token** 账号时自动注入（PAT 优先于 oauth）
+- oauth 账号：PATH 上安装 [git-credential-oauth](https://github.com/hickford/git-credential-oauth)；**不要**运行 `configure`；授权回环必须打到运行 DSH 的那台机器  
 - push guard：命令中的 URL **以及** 裸 `git push`/`git push origin`（解析 remote）
 
 ## 安全
