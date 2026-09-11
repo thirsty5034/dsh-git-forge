@@ -25,6 +25,7 @@ import {
   parseOAuthHelperOutput,
   fillUsernameForHost,
   isHttpsAuthorizeUrl,
+  oauthFillOk,
 } from '../lib/oauth-protocol.js'
 import { buildHelperGitconfigContent, helperLineCount } from '../lib/helper-gitconfig.js'
 import { runSilentOAuthGet } from '../lib/oauth-spawn.js'
@@ -340,6 +341,11 @@ test('publicAccount oauth status from refresh; no secret fields', () => {
   assertNoSecretFields(pub)
   const expired = publicAccount(account, { byAccountId: { o1: { oauthExpired: true } } })
   assert.equal(expired.credentialStatus, 'expired')
+  const accessOnly = publicAccount(account, {
+    byAccountId: { o1: { token: 'gho_access', oauthTokenExpiry: Math.floor(Date.now() / 1000) + 3600 } },
+  })
+  assert.equal(accessOnly.credentialStatus, 'saved')
+  assertNoSecretFields(accessOnly)
 })
 
 test('oauth protocol stdin/stdout and username defaults', () => {
@@ -358,6 +364,8 @@ test('oauth protocol stdin/stdout and username defaults', () => {
   assert.equal(isHttpsAuthorizeUrl('https://github.com/login/oauth/authorize?x=1'), true)
   assert.equal(isHttpsAuthorizeUrl('http://127.0.0.1:1234/'), false)
   assert.equal(isHttpsAuthorizeUrl('file:///etc/passwd'), false)
+  assert.equal(oauthFillOk({ password: 'gho_x', oauthRefreshToken: '' }), true)
+  assert.equal(oauthFillOk({ password: '', oauthRefreshToken: '' }), false)
 })
 
 test('helper gitconfig is a single forge helper after empty reset', () => {
@@ -485,6 +493,48 @@ test('credential helper silent oauth fill via fake binary', () => {
     assert.equal(r.status, 0, r.stderr)
     assert.match(r.stdout, /username=oauth2/)
     assert.match(r.stdout, /password=access_ok/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('credential helper uses cached oauth access when no refresh', () => {
+  const home = mkdtempSync(join(tmpdir(), 'gf-home-'))
+  const gf = join(home, 'git-forge')
+  mkdirSync(gf)
+  writeFileSync(
+    join(gf, 'accounts.json'),
+    JSON.stringify({
+      version: 1,
+      accounts: [{ id: 'o1', gitHost: 'github.com', authMethod: 'oauth', username: '' }],
+    }) + '\n',
+  )
+  writeFileSync(
+    join(gf, 'grants.json'),
+    JSON.stringify({ version: 1, projects: { '/workspace/app': { accountIds: ['o1'] } } }) + '\n',
+  )
+  writeFileSync(
+    join(gf, 'secrets.json'),
+    JSON.stringify({
+      version: 1,
+      byAccountId: { o1: { token: 'gho_cached', oauthTokenExpiry: Math.floor(Date.now() / 1000) + 3600 } },
+    }) + '\n',
+  )
+  chmodSync(join(gf, 'secrets.json'), 0o600)
+  const helper = join(ROOT, 'scripts/git-credential-dsh-git-forge.mjs')
+  const r = spawnSync(process.execPath, [helper, 'get'], {
+    cwd: gf,
+    env: {
+      ...process.env,
+      DSH_HOME: home,
+      DSH_GIT_FORGE_PROJECT: '/workspace/app',
+    },
+    input: 'protocol=https\nhost=github.com\n\n',
+    encoding: 'utf8',
+  })
+  try {
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /password=gho_cached/)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

@@ -111,37 +111,46 @@ async function runGet() {
     (secretsDoc.byAccountId && secretsDoc.byAccountId[selected.account.id]) || {}
   if (selected.via === 'oauth' || selected.account.authMethod === 'oauth') {
     const refresh = sec.oauthRefreshToken || ''
-    if (!refresh) {
-      debug('oauth refresh missing; re-authorize in Git Forge sidebar')
-      return
-    }
-    const silent = await runSilentOAuthGet({
-      host,
-      username: fillUsernameForHost(host, selected.account.username),
-      refreshToken: refresh,
-    })
-    if (!silent.ok || !silent.parsed.password) {
-      debug('oauth refresh failed; re-authorize in Git Forge sidebar')
-      return
-    }
-    if (silent.parsed.oauthRefreshToken && silent.parsed.oauthRefreshToken !== refresh) {
-      try {
-        const next = { ...secretsDoc, byAccountId: { ...secretsDoc.byAccountId } }
-        next.byAccountId[selected.account.id] = {
-          ...sec,
-          oauthRefreshToken: silent.parsed.oauthRefreshToken,
-          oauthExpired: undefined,
+    const cachedAccess = sec.token || ''
+    const exp = Number(sec.oauthTokenExpiry)
+    const accessFresh =
+      !!cachedAccess && (!Number.isFinite(exp) || exp <= 0 || exp > Math.floor(Date.now() / 1000) + 30)
+    if (refresh) {
+      const silent = await runSilentOAuthGet({
+        host,
+        username: fillUsernameForHost(host, selected.account.username),
+        refreshToken: refresh,
+      })
+      if (silent.ok && silent.parsed.password) {
+        if (silent.parsed.oauthRefreshToken && silent.parsed.oauthRefreshToken !== refresh) {
+          try {
+            const next = { ...secretsDoc, byAccountId: { ...secretsDoc.byAccountId } }
+            next.byAccountId[selected.account.id] = {
+              ...sec,
+              oauthRefreshToken: silent.parsed.oauthRefreshToken,
+              token: silent.parsed.password,
+            }
+            if (silent.parsed.passwordExpiryUtc) {
+              next.byAccountId[selected.account.id].oauthTokenExpiry = Number(
+                silent.parsed.passwordExpiryUtc,
+              )
+            }
+            writeFileSync(join(dir, 'secrets.json'), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
+          } catch {
+            /* ignore persist errors; still fill git */
+          }
         }
-        if (silent.parsed.passwordExpiryUtc) {
-          next.byAccountId[selected.account.id].oauthTokenExpiry = Number(silent.parsed.passwordExpiryUtc)
-        }
-        writeFileSync(join(dir, 'secrets.json'), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
-      } catch {
-        /* ignore persist errors; still fill git */
+        const username = fillUsernameForHost(host, selected.account.username || silent.parsed.username)
+        process.stdout.write(`username=${username}\npassword=${silent.parsed.password}\n\n`)
+        return
       }
     }
-    const username = fillUsernameForHost(host, selected.account.username || silent.parsed.username)
-    process.stdout.write(`username=${username}\npassword=${silent.parsed.password}\n\n`)
+    if (accessFresh) {
+      const username = fillUsernameForHost(host, selected.account.username)
+      process.stdout.write(`username=${username}\npassword=${cachedAccess}\n\n`)
+      return
+    }
+    debug('oauth refresh missing/failed; re-authorize in Git Forge sidebar')
     return
   }
   const token = sec.token || ''
