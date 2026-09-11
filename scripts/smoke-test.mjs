@@ -20,6 +20,19 @@ import {
 } from '../lib/shared/git-policy.js'
 import { selectTokenAccountForHost, selectHttpsAccountForHost } from '../lib/shared/credential-select.js'
 import { oauthProviderHostError, oauthSupportedProvider } from '../lib/shared/oauth-match.js'
+import {
+  oauthGetStdin,
+  parseOAuthHelperOutput,
+  fillUsernameForHost,
+  isHttpsAuthorizeUrl,
+} from '../lib/oauth-protocol.js'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const ROOT = dirname(fileURLToPath(import.meta.url)) + '/..'
 import { guessPushRemoteName } from '../lib/shared/remote-resolve.js'
 import {
   parseCredentialInput,
@@ -312,6 +325,44 @@ test('publicAccount oauth status from refresh; no secret fields', () => {
   assertNoSecretFields(pub)
   const expired = publicAccount(account, { byAccountId: { o1: { oauthExpired: true } } })
   assert.equal(expired.credentialStatus, 'expired')
+})
+
+test('oauth protocol stdin/stdout and username defaults', () => {
+  const stdin = oauthGetStdin({ host: 'github.com', refreshToken: 'rt1', username: 'alice' })
+  assert.match(stdin, /host=github.com/)
+  assert.match(stdin, /oauth_refresh_token=rt1/)
+  const parsed = parseOAuthHelperOutput(
+    'username=oauth2\npassword=access_secret\noauth_refresh_token=rt2\npassword_expiry_utc=1700000000\n',
+  )
+  assert.equal(parsed.username, 'oauth2')
+  assert.equal(parsed.password, 'access_secret')
+  assert.equal(parsed.oauthRefreshToken, 'rt2')
+  assert.equal(fillUsernameForHost('bitbucket.org', ''), 'x-token-auth')
+  assert.equal(fillUsernameForHost('github.com', ''), 'oauth2')
+  assert.equal(fillUsernameForHost('github.com', 'me'), 'me')
+  assert.equal(isHttpsAuthorizeUrl('https://github.com/login/oauth/authorize?x=1'), true)
+  assert.equal(isHttpsAuthorizeUrl('http://127.0.0.1:1234/'), false)
+  assert.equal(isHttpsAuthorizeUrl('file:///etc/passwd'), false)
+})
+
+test('xdg-open stub writes pending https URL and rejects loopback', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gf-oauth-'))
+  const pending = join(dir, 'pending.json')
+  const stub = join(ROOT, 'scripts/dsh-git-forge-xdg-open.mjs')
+  const good = spawnSync(process.execPath, [stub, 'https://github.com/login/oauth/authorize?x=1'], {
+    env: { ...process.env, DSH_GIT_FORGE_OAUTH_PENDING: pending },
+    encoding: 'utf8',
+  })
+  assert.equal(good.status, 0, good.stderr)
+  const body = JSON.parse(readFileSync(pending, 'utf8'))
+  assert.equal(body.url, 'https://github.com/login/oauth/authorize?x=1')
+  assert.equal(typeof body.at, 'number')
+  const bad = spawnSync(process.execPath, [stub, 'http://127.0.0.1:9/'], {
+    env: { ...process.env, DSH_GIT_FORGE_OAUTH_PENDING: pending },
+    encoding: 'utf8',
+  })
+  assert.equal(bad.status, 1)
+  rmSync(dir, { recursive: true, force: true })
 })
 
 if (failed) {
