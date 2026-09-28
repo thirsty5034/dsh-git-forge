@@ -20,7 +20,7 @@ import {
 } from '../lib/shared/git-policy.js'
 import { selectTokenAccountForHost } from '../lib/shared/credential-select.js'
 import { guessPushRemoteName } from '../lib/shared/remote-resolve.js'
-import { buildTool } from '../lib/shared/tool-def.js'
+import { buildTool, rawToolFromSpec } from '../lib/shared/tool-def.js'
 import {
   parseCredentialInput,
   resolveHelperProjectKey,
@@ -245,6 +245,35 @@ test('buildTool compiles spec to a registry-ready definition', () => {
   assert.deepEqual(tool.output.schema.required, ['text'])
   assert.equal(tool.output.schema.additionalProperties, false)
   assert.equal(typeof tool.execute, 'function')
+})
+
+test('buildTool fallback path matches the compiled definition', () => {
+  const spec = {
+    name: 'T',
+    description: 'd',
+    timeoutMs: 30000,
+    parameters: {
+      action: { type: 'string', enum: ['a', 'b'], required: true },
+      url: { type: 'string' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { text: { type: 'string', required: true }, isError: { type: 'boolean' } },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute() { return { text: 'ok' } },
+  }
+  const shape = (t) => ({
+    name: t.name,
+    description: t.description,
+    timeoutMs: t.timeoutMs,
+    parameters: t.parameters,
+    outputSchema: t.output.schema,
+  })
+  assert.deepEqual(shape(rawToolFromSpec(spec)), shape(buildTool(spec)))
 })
 
 test('guessPushRemoteName', () => {
