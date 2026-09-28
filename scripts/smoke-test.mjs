@@ -20,6 +20,7 @@ import {
 } from '../lib/shared/git-policy.js'
 import { selectTokenAccountForHost } from '../lib/shared/credential-select.js'
 import { guessPushRemoteName } from '../lib/shared/remote-resolve.js'
+import { buildTool } from '../lib/shared/tool-def.js'
 import {
   parseCredentialInput,
   resolveHelperProjectKey,
@@ -218,6 +219,32 @@ test('resolveHelperProjectKey prefers env over cwd walk', () => {
   })
   assert.equal(r.source, 'env')
   assert.equal(r.key, '/workspace/DSH-plugin')
+})
+
+test('buildTool compiles spec to a registry-ready definition', () => {
+  const tool = buildTool({
+    name: 'T',
+    description: 'd',
+    parameters: {
+      action: { type: 'string', enum: ['a', 'b'], required: true },
+      url: { type: 'string' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { text: { type: 'string', required: true } },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute() { return { text: 'ok' } },
+  })
+  assert.equal(tool.name, 'T')
+  assert.deepEqual(tool.parameters.required, ['action'])
+  assert.equal(tool.parameters.additionalProperties, false)
+  assert.deepEqual(tool.output.schema.required, ['text'])
+  assert.equal(tool.output.schema.additionalProperties, false)
+  assert.equal(typeof tool.execute, 'function')
 })
 
 test('guessPushRemoteName', () => {
