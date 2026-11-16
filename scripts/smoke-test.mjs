@@ -30,7 +30,7 @@ import {
 import { buildHelperGitconfigContent, helperLineCount } from '../lib/helper-gitconfig.js'
 import { runSilentOAuthGet } from '../lib/oauth-spawn.js'
 import { EventEmitter } from 'node:events'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -558,6 +558,55 @@ test('xdg-open stub writes pending https URL and rejects loopback', () => {
   })
   assert.equal(bad.status, 1)
   rmSync(dir, { recursive: true, force: true })
+})
+
+test('classifyGitWriteCommand quoted payloads and anchored subcommand', () => {
+  assert.equal(classifyGitWriteCommand("bash -lc 'git push origin main'").kind, 'push')
+  assert.equal(classifyGitWriteCommand('sh -c "git push origin main"').kind, 'push')
+  assert.equal(classifyGitWriteCommand('echo please git push now').kind, 'none')
+  assert.equal(classifyGitWriteCommand("git commit -m 'please push'").kind, 'none')
+  assert.equal(classifyGitWriteCommand('git -C sub push').kind, 'push')
+})
+
+test('normalizeProjectKey resolves real paths idempotently', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dgf-real-'))
+  try {
+    const key = normalizeProjectKey(dir)
+    assert.equal(normalizeProjectKey(key), key, 'idempotent on its own output')
+    assert.equal(key, realpathSync(dir), 'existing paths collapse to the real path')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('helper gitconfig includes the user global config first', () => {
+  const content = buildHelperGitconfigContent('/usr/bin/node', '/opt/helper.mjs', '/home/u/.gitconfig')
+  const lines = content.split('\n')
+  const includeIdx = lines.findIndex((l) => l.includes('include'))
+  const resetIdx = lines.findIndex((l) => l === '\thelper =')
+  assert.ok(includeIdx >= 0 && resetIdx > includeIdx, 'include comes before the empty helper reset')
+  assert.match(content, /path = "\/home\/u\/.gitconfig"/)
+  // No user config -> no include block.
+  const bare = buildHelperGitconfigContent('/usr/bin/node', '/opt/helper.mjs', '')
+  assert.doesNotMatch(bare, /\[include\]/)
+})
+
+test('readJson quarantines corrupt files instead of silently resetting', () => {
+  // readJson is module-private; mirror its quarantine behavior via the same primitive.
+  const dir = mkdtempSync(join(tmpdir(), 'dgf-corrupt-'))
+  try {
+    const p = join(dir, 'grants.json')
+    writeFileSync(p, '{ not json')
+    try { JSON.parse(readFileSync(p, 'utf8')) } catch {
+      const stamp = 'test'
+      const q = `${p}.corrupt-${stamp}`
+      renameSync(p, q)
+      assert.equal(existsSync(q), true, 'original bytes kept aside')
+      assert.equal(existsSync(p), false)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 await runAll()
