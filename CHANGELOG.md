@@ -2,6 +2,15 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
+## 0.1.9 — 2026-11-16
+
+### Fixed
+- **Push guard hardening** (backported from the OMSociety fork deep review): push detection anchors on the git subcommand token (quoted commit-message prose no longer false-positives), `bash -lc`/`sh -c` payloads classify recursively, remote resolution retries once, and an unresolvable bare push fails closed in enforce mode.
+- **API fence rejects cross-site browser requests** (`Sec-Fetch-Site: cross-site` or Origin/Host mismatch).
+- The generated agent gitconfig now `include`s the user's own global gitconfig first (identity/proxies keep working), with the empty helper reset still clearing inherited credential helpers.
+- `normalizeProjectKey` canonicalizes existing paths via realpath (Windows 8.3 aliases collapse); corrupt JSON files are quarantined instead of silently reset.
+- The API admission fallback now also honors the listener bind address and webStartup trusted hosts, matching dsh-ssh-tunnel v0.5.2.
+
 ## 0.1.8 — 2026-11-13
 
 ### Fixed

@@ -2,6 +2,15 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
+## 0.1.9 — 2026-11-16
+
+### 修复
+- **push 守卫加固**（回迁 OMSociety fork 深度审查）：push 检测锚定 git 子命令 token（提交信息里的引号内容不再误报），`bash -lc`/`sh -c` 载荷递归分类，remote 解析失败重试一次，enforce 模式下无法解析的裸 push 直接拒绝。
+- **API 围栏拒绝跨站浏览器请求**（`Sec-Fetch-Site: cross-site` 或 Origin/Host 不一致）。
+- 生成的 agent gitconfig 现在**首先 include 用户自己的全局 gitconfig**（身份与代理配置继续生效），其后的空 helper 重置仍会清掉继承来的 credential.helper。
+- `normalizeProjectKey` 对已存在路径做 realpath 规范化（Windows 8.3 短名别名折叠为同一 key）；损坏的 JSON 文件被隔离保存而非静默重置。
+- API 准入 fallback 层同时支持 listener 绑定地址与 webStartup 信任主机，与 dsh-ssh-tunnel v0.5.2 对齐。
+
 ## 0.1.8 — 2026-11-13
 
 ### 修复
