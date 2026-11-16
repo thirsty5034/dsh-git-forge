@@ -2,6 +2,11 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
+## 0.1.8 — 2026-11-13
+
+### Fixed
+- **Sidebar tab returned `{"ok":false,"error":"forbidden"}` behind a reverse proxy on DSH 0.2.** Two stacked causes: (1) admission read `ctx.webRuntime.trustedHosts`, a service deleted in DSH 0.2; (2) the API route never declared `connection` in its `inject` list, so handler-time `ctx.connection` threw `cannot get property "connection" without inject`, which the webserver turned into a bare HTTP 400. The route now delegates admission to the Connection fence (`ctx.connection.requestRejection` — loopback, bind-IP, `--trusted-host`, browser-auth) and declares `connection` in `inject`, matching `dsh-ssh-tunnel` 0.4.6. The legacy local Host/Origin check remains only as a fallback for pre-0.2 hosts.
+
 ## 0.1.7 — 2026-09-11
 
 ### Added

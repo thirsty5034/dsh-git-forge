@@ -2,6 +2,11 @@
 
 [English](./CHANGELOG.md) | [简体中文](./CHANGELOG.zh-CN.md)
 
+## 0.1.8 — 2026-11-13
+
+### 修复
+- **DSH 0.2 + 反向代理下，侧栏页签报 `{"ok":false,"error":"forbidden"}`。** 两层原因叠加：(1) 准入读的是 `ctx.webRuntime.trustedHosts`，该服务在 DSH 0.2 已删除；(2) API 路由的 `inject` 列表没有声明 `connection`，运行时读 `ctx.connection` 抛 `cannot get property "connection" without inject`，被 webserver 吞成裸 HTTP 400。现在路由把准入委托给 Connection 围栏（`ctx.connection.requestRejection`——loopback / bind-IP / `--trusted-host` / 浏览器认证），并在 `inject` 中声明 `connection`，与 `dsh-ssh-tunnel` 0.4.6 的修法一致；旧本地 Host/Origin 检查仅作为 pre-0.2 宿主的兜底保留。
+
 ## 0.1.7 — 2026-09-11
 
 ### 新增
